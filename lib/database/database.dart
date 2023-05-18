@@ -87,4 +87,21 @@ class Database {
       }
     });
   }
+
+  /// watches and searches for routines present in the database
+  Stream<List<Routine>> watchRoutines({String keyword = ''}) async* {
+    final IsarCollection<Routine> routines = _isar.routines;
+    if (keyword.isNotEmpty) {
+      yield* routines
+          .filter()
+          .titleContains(keyword, caseSensitive: false)
+          .watch(fireImmediately: true);
+    } else {
+      yield* routines.where().watch(fireImmediately: true);
+    }
+  }
+
+  Stream<List<Category>> watchCategories() async* {
+    yield* _isar.categorys.where().watch(fireImmediately: true);
+  }
 }

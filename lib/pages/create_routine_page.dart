@@ -20,11 +20,12 @@ class CreateRoutinePage extends StatefulWidget {
 }
 
 class _CreateRoutinePageState extends State<CreateRoutinePage> {
-  late List<Category> categories = [];
-  late Category dropdownCategory = Category.empty;
+  // late List<Category> categories = [];
+  late final ValueNotifier<Category> dropDownCategory =
+      ValueNotifier(Category.empty);
 
   TimeOfDay selectedTime = TimeOfDay.now();
-  String selectedDay = days[0];
+  late final ValueNotifier<String> selectedDay = ValueNotifier(days[0]);
 
   late final TextEditingController _titleController = TextEditingController();
   late final TextEditingController _timeController = TextEditingController();
@@ -39,14 +40,16 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     if (!isRoutineNull()) {
       _titleController.text = widget.routine!.title;
       _timeController.text = widget.routine!.startTime;
-      selectedDay = widget.routine!.day;
+      selectedDay.value = widget.routine!.day;
       selectedTime = stringToTimeOfDay(widget.routine!.startTime);
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _readCategories());
+    // WidgetsBinding.instance.addPostFrameCallback((_) => _readCategories());
   }
 
   @override
   void dispose() {
+    dropDownCategory.dispose();
+    selectedDay.dispose();
     _titleController.dispose();
     _timeController.dispose();
     _newCategoryController.dispose();
@@ -54,10 +57,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   }
 
   bool isRoutineNull() => widget.routine == null;
-
-  // String _getFormattedTime() {
-  //   return "${selectedTime.hour}:${selectedTime.minute} ${selectedTime.period.name}";
-  // }
 
   void _selectTime(BuildContext context) async {
     final TimeOfDay? timeOfDay = await showTimePicker(
@@ -72,19 +71,19 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     }
   }
 
-  void _readCategories() async {
-    List<Category> newCategories = await db.getCategories();
-    setState(() {
-      categories = newCategories;
-      if (categories.isNotEmpty) {
-        if (isRoutineNull()) {
-          dropdownCategory = categories.first;
-        } else {
-          dropdownCategory = widget.routine!.category.value!;
-        }
-      }
-    });
-  }
+  // void _readCategories() async {
+  //   List<Category> newCategories = await db.getCategories();
+  //   setState(() {
+  //     categories = newCategories;
+  //     if (categories.isNotEmpty) {
+  //       if (isRoutineNull()) {
+  //         dropdownCategory = categories.first;
+  //       } else {
+  //         dropdownCategory = widget.routine!.category.value!;
+  //       }
+  //     }
+  //   });
+  // }
 
   String _getAppBarTitle() {
     if (isRoutineNull()) return 'Add Routine';
@@ -155,20 +154,41 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<Category>(
-                  value: dropdownCategory,
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  items: categories
-                      .map(
-                        (category) => DropdownMenuItem<Category>(
-                          value: category,
-                          child: Text(category.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) => setState(() {
-                    dropdownCategory = value ?? dropdownCategory;
-                  }),
+                child: StreamBuilder<List<Category>>(
+                  stream: db.watchCategories(),
+                  builder: (BuildContext context, AsyncSnapshot snapshot) {
+                    if (snapshot.hasData) {
+                      final List<Category> newCategories = snapshot.data ?? [];
+                      if (newCategories.isNotEmpty) {
+                        if (isRoutineNull()) {
+                          dropDownCategory.value = newCategories.last;
+                        } else {
+                          dropDownCategory.value =
+                              widget.routine!.category.value!;
+                        }
+                      }
+                      return ValueListenableBuilder<Category>(
+                        valueListenable: dropDownCategory,
+                        builder: (BuildContext context, _, __) {
+                          return DropdownButtonFormField<Category>(
+                            value: dropDownCategory.value,
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                            items: newCategories
+                                .map(
+                                  (category) => DropdownMenuItem<Category>(
+                                    value: category,
+                                    child: Text(category.name),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) => dropDownCategory.value =
+                                value ?? dropDownCategory.value,
+                          );
+                        },
+                      );
+                    }
+                    return const CircularProgressIndicator();
+                  },
                 ),
               ),
               IconButton(
@@ -201,7 +221,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                             )
                                 .then((_) {
                               _newCategoryController.clear();
-                              _readCategories();
                             });
                             Navigator.pop(context);
                           }
@@ -253,7 +272,7 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           const _Heading(text: 'Select day'),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: selectedDay,
+            value: selectedDay.value,
             icon: const Icon(Icons.keyboard_arrow_down),
             items: days
                 .map(
@@ -263,9 +282,8 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                   ),
                 )
                 .toList(),
-            onChanged: (value) => setState(() {
-              selectedDay = value ?? selectedDay;
-            }),
+            onChanged: (value) =>
+                selectedDay.value = value ?? selectedDay.value,
           ),
           const SizedBox(height: 24),
           Align(
@@ -274,15 +292,15 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
               onPressed: () {
                 if (_titleController.text.isEmpty ||
                     _timeController.text.isEmpty ||
-                    dropdownCategory.isEmpty) return;
+                    dropDownCategory.value.isEmpty) return;
                 if (isRoutineNull()) {
                   db
                       .addRoutine(
                         Routine()
                           ..title = _titleController.text
                           ..startTime = _timeController.text
-                          ..day = selectedDay
-                          ..category.value = dropdownCategory,
+                          ..day = selectedDay.value
+                          ..category.value = dropDownCategory.value,
                       )
                       .then((_) => Navigator.pop(context));
                 } else {
@@ -292,8 +310,8 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                           ..id = widget.routine!.id
                           ..title = _titleController.text
                           ..startTime = _timeController.text
-                          ..day = selectedDay
-                          ..category.value = dropdownCategory,
+                          ..day = selectedDay.value
+                          ..category.value = dropDownCategory.value,
                       )
                       .then((_) => Navigator.pop(context));
                 }
