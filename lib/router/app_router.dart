@@ -9,8 +9,12 @@ class AppRouter {
     switch (routeSettings.name) {
       case AppRoutes.home:
         return HomePage.route();
+      case AppRoutes.categoryListPage:
+        return CategoryListPage.route();
       case AppRoutes.createRoutinePage:
-        return CreateRoutinePage.route(routine: routeSettings.arguments as Routine?);
+        return CreateRoutinePage.route(
+          routine: routeSettings.arguments as Routine?,
+        );
       default:
         return HomePage.route();
     }

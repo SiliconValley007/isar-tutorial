@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../collections/category.dart';
 import '../collections/routine.dart';
 import '../core/constants.dart';
-import '../database/database.dart';
+import '../cubit/category_cubit/category_cubit.dart';
+import '../cubit/routine_cubit/routine_cubit.dart';
 
 class CreateRoutinePage extends StatefulWidget {
   const CreateRoutinePage({super.key, this.routine});
@@ -32,8 +34,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
   late final TextEditingController _newCategoryController =
       TextEditingController();
 
-  late final Database db = Database();
-
   @override
   void initState() {
     super.initState();
@@ -43,7 +43,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
       selectedDay.value = widget.routine!.day;
       selectedTime = stringToTimeOfDay(widget.routine!.startTime);
     }
-    // WidgetsBinding.instance.addPostFrameCallback((_) => _readCategories());
   }
 
   @override
@@ -71,20 +70,6 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     }
   }
 
-  // void _readCategories() async {
-  //   List<Category> newCategories = await db.getCategories();
-  //   setState(() {
-  //     categories = newCategories;
-  //     if (categories.isNotEmpty) {
-  //       if (isRoutineNull()) {
-  //         dropdownCategory = categories.first;
-  //       } else {
-  //         dropdownCategory = widget.routine!.category.value!;
-  //       }
-  //     }
-  //   });
-  // }
-
   String _getAppBarTitle() {
     if (isRoutineNull()) return 'Add Routine';
     return 'Update Routine';
@@ -95,8 +80,9 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
     return 'Update';
   }
 
-  List<Widget>? _createAppBarActions() {
+  List<Widget>? _createAppBarActions(BuildContext context) {
     if (isRoutineNull()) return null;
+    final RoutineCubit routineCubit = context.read<RoutineCubit>();
     return [
       IconButton(
         onPressed: () => showDialog(
@@ -106,9 +92,10 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                 const Text('Are you sure you want to delete this routine?'),
             actions: [
               TextButton(
-                onPressed: () => db
-                    .deleteRoutine(widget.routine!.id)
-                    .then((_) => Navigator.of(context).pop(true)),
+                onPressed: () {
+                  routineCubit.deleteRoutine(routineId: widget.routine!.id);
+                  Navigator.of(context).pop(true);
+                },
                 child: const Text(
                   'Delete',
                   style: TextStyle(color: Colors.red),
@@ -138,10 +125,12 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
 
   @override
   Widget build(BuildContext context) {
+    final RoutineCubit routineCubit = context.read<RoutineCubit>();
+    final CategoryCubit categoryCubit = context.read<CategoryCubit>();
     return Scaffold(
       appBar: AppBar(
         title: Text(_getAppBarTitle()),
-        actions: _createAppBarActions(),
+        actions: _createAppBarActions(context),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(
@@ -154,11 +143,10 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
           Row(
             children: [
               Expanded(
-                child: StreamBuilder<List<Category>>(
-                  stream: db.watchCategories(),
-                  builder: (BuildContext context, AsyncSnapshot snapshot) {
-                    if (snapshot.hasData) {
-                      final List<Category> newCategories = snapshot.data ?? [];
+                child: BlocBuilder<CategoryCubit, CategoryState>(
+                  builder: (context, state) {
+                    if (state is CategoriesLoaded) {
+                      final List<Category> newCategories = state.categories;
                       if (newCategories.isNotEmpty) {
                         if (isRoutineNull()) {
                           dropDownCategory.value = newCategories.last;
@@ -187,51 +175,14 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                         },
                       );
                     }
-                    return const CircularProgressIndicator();
+                    return const Center(child: CircularProgressIndicator());
                   },
                 ),
               ),
               IconButton(
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Add new Category'),
-                    content: TextField(
-                      controller: _newCategoryController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter category name',
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          if (_newCategoryController.text.isNotEmpty) {
-                            db
-                                .addCategory(
-                              categoryName: _newCategoryController.text,
-                            )
-                                .then((_) {
-                              _newCategoryController.clear();
-                            });
-                            Navigator.pop(context);
-                          }
-                        },
-                        child: const Text(
-                          'Save',
-                        ),
-                      ),
-                    ],
-                  ),
-                ).then((_) {
+                onPressed: () => addNewCategoryDialog(context,
+                        controller: _newCategoryController)
+                    .then((_) {
                   _newCategoryController.clear();
                 }),
                 icon: const Icon(Icons.add_circle_outline_outlined),
@@ -294,27 +245,24 @@ class _CreateRoutinePageState extends State<CreateRoutinePage> {
                     _timeController.text.isEmpty ||
                     dropDownCategory.value.isEmpty) return;
                 if (isRoutineNull()) {
-                  db
-                      .addRoutine(
-                        Routine()
-                          ..title = _titleController.text
-                          ..startTime = _timeController.text
-                          ..day = selectedDay.value
-                          ..category.value = dropDownCategory.value,
-                      )
-                      .then((_) => Navigator.pop(context));
+                  routineCubit.addRoutine(
+                    routine: Routine()
+                      ..title = _titleController.text
+                      ..startTime = _timeController.text
+                      ..day = selectedDay.value
+                      ..category.value = dropDownCategory.value,
+                  );
                 } else {
-                  db
-                      .updateRoutine(
-                        Routine()
-                          ..id = widget.routine!.id
-                          ..title = _titleController.text
-                          ..startTime = _timeController.text
-                          ..day = selectedDay.value
-                          ..category.value = dropDownCategory.value,
-                      )
-                      .then((_) => Navigator.pop(context));
+                  routineCubit.updateRoutine(
+                    routine: Routine()
+                      ..id = widget.routine!.id
+                      ..title = _titleController.text
+                      ..startTime = _timeController.text
+                      ..day = selectedDay.value
+                      ..category.value = dropDownCategory.value,
+                  );
                 }
+                Navigator.pop(context);
               },
               child: Text(_getSubmitButtonTitle()),
             ),

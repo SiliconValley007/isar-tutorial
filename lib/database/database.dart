@@ -6,11 +6,9 @@ import '../collections/category.dart';
 import '../collections/routine.dart';
 
 class Database {
-  static late final Isar _isar;
-  void init(Isar isar) {
-    // final dir = await getApplicationDocumentsDirectory(); // we don't use this directory as this is where the user of the device stores its personal files
-    _isar = isar;
-  }
+  final Isar _isar;
+
+  const Database({required Isar isar}) : _isar = isar;
 
   // create operation
   Future<void> addCategory({required String categoryName}) async {
@@ -23,17 +21,6 @@ class Database {
   Future<List<Category>> getCategories() async {
     final IsarCollection<Category> categories = _isar.categorys;
     return await categories.where().findAll();
-  }
-
-  Category getFirstCategory() {
-    final IsarCollection<Category> categories = _isar.categorys;
-    Category category = Category()..name = '';
-    categories
-        .where()
-        .findFirst()
-        .then((categorie) => category = categorie ?? Category()
-          ..name = '');
-    return category;
   }
 
   Future<void> addRoutine(Routine routine) async {
@@ -72,6 +59,11 @@ class Database {
     final IsarCollection<Routine> routines = _isar.routines;
     await _isar.writeTxn(() async => await routines.delete(routineId));
   }
+  
+  Future<void> deleteCategory(int categoryId) async {
+    final IsarCollection<Category> categories = _isar.categorys;
+    await _isar.writeTxn(() async => await categories.delete(categoryId));
+  }
 
   Future<List<Routine>> searchRoutinesByTitle(String keyword) async {
     final IsarCollection<Routine> routines = _isar.routines;
@@ -101,7 +93,15 @@ class Database {
     }
   }
 
-  Stream<List<Category>> watchCategories() async* {
-    yield* _isar.categorys.where().watch(fireImmediately: true);
+  Stream<List<Category>> watchCategories({String keyword = ''}) async* {
+    final IsarCollection<Category> categories = _isar.categorys;
+    if (keyword.isNotEmpty) {
+      yield* categories
+          .filter()
+          .nameContains(keyword, caseSensitive: false)
+          .watch(fireImmediately: true);
+    } else {
+      yield* categories.where().watch(fireImmediately: true);
+    }
   }
 }
